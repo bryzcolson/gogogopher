@@ -1,0 +1,6 @@
+[server]
+port = 70
+homedir = "example"
+
+[limits]
+max_connections = 10
