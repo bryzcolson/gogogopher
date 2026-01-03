@@ -1,0 +1,1 @@
+This is a sample file located at /docs/document.txt.

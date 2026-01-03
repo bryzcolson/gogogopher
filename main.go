@@ -9,7 +9,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/google/uuid"
 	toml "github.com/pelletier/go-toml"
 )
 
@@ -42,7 +41,7 @@ func loadConfig(path string) error {
 }
 
 func init() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 }
 
@@ -103,11 +102,4 @@ func main() {
 
 	sig := <-sigChan
 	slog.Info("Received shutdown signal", "sig", sig.String())
-}
-
-func handleConn(conn net.Conn) {
-	requestId := uuid.New().String()
-
-	slog.Info("Started request", "requestId", requestId)
-	defer slog.Info("Completed request", "requestId", requestId)
 }
