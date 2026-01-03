@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -40,21 +41,45 @@ func handleConn(conn net.Conn) {
 	reqLogger.Info("Completed request for selector", "selector", selector)
 }
 
-func readPath(basepath, selector string) ([]byte, bool, error) {
-	path := filepath.Join(basepath, selector)
-	info, err := os.Stat(path)
+func cleanPath(basepath, selector string) (string, bool, error) {
+	root, err := os.OpenRoot(basepath)
 	if err != nil {
-		return nil, false, errors.New("file not found")
+		return "", false, err
+	}
+	defer root.Close()
+
+	selector = strings.TrimPrefix(selector, "/")
+	selector = filepath.Clean(selector)
+
+	info, err := root.Stat(selector)
+	if err != nil {
+		return "", false, errors.New("file not found")
 	}
 
-	isGophermap := false
+	isDir := false
 	if info.IsDir() {
-		path = filepath.Join(path, "gophermap")
-		isGophermap = true
+		isDir = true
+		selector = filepath.Join(selector, "gophermap")
 	}
-	data, err := os.ReadFile(path)
+	return selector, isDir, nil
+}
+
+func readPath(basepath, selector string) ([]byte, bool, error) {
+	cleanSelector, isDir, err := cleanPath(basepath, selector)
 	if err != nil {
-		return nil, false, errors.New("file not found")
+		return nil, isDir, err
 	}
-	return data, isGophermap, nil
+
+	path := filepath.Join(basepath, cleanSelector)
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, isDir, errors.New("invalid file path")
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, isDir, errors.New("file not found")
+	}
+	return data, isDir, nil
 }
