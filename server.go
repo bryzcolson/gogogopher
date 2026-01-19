@@ -1,136 +1,73 @@
 package main
 
 import (
-	"bufio"
-	"errors"
-	"fmt"
 	"io"
-	"net"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	gopher "codeberg.org/bryzcolson/net-gopher"
 	"github.com/google/uuid"
 )
 
-var (
-	ErrInvalidFilePath = errors.New("invalid file path")
-	ErrFileNotFound    = errors.New("file not found")
-)
+func makeHandler(homedir string) func(gopher.ResponseWriter, *gopher.Request) {
+	return func(w gopher.ResponseWriter, r *gopher.Request) {
+		log := slog.With("requestId", uuid.New().String())
+		log.Info("Request received", "selector", r.Selector)
 
-type FileType int
+		selector := strings.TrimPrefix(r.Selector, "/")
+		if selector == "" {
+			selector = "."
+		}
 
-const (
-	FileTypeText = iota
-	FileTypeGophermap
-	FileTypeBinary
-	FileTypeErr
-)
-
-func handleConn(conn net.Conn) {
-	requestId := uuid.New().String()
-	reqLogger := logger.With("requestId", requestId)
-
-	reader := bufio.NewReader(conn)
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		reqLogger.Error("Connection read error", "err", err)
-		return
-	}
-
-	selector := strings.TrimSpace(line)
-	reqLogger.Info("Received request for selector", "selector", selector)
-
-	data, fileType, err := readPath(config.Server.HomeDir, selector)
-	if err != nil {
-		reqLogger.Error("Error reading path", "selector", selector, "err", err)
-		return
-	}
-
-	if fileType == FileTypeBinary {
-		_, err = conn.Write(data)
+		path := filepath.Join(homedir, selector)
+		info, err := os.Stat(path)
 		if err != nil {
-			reqLogger.Error("Error writing binary data", "err", err)
+			log.Error("Not found", "selector", selector)
+			w.WriteError("Not found")
+			return
 		}
-	} else {
-		for _, line := range strings.Split(string(data), "\n") {
-			fmt.Fprintf(conn, "%s\r\n", line)
+
+		if info.IsDir() {
+			path = filepath.Join(homedir, selector, "gophermap")
 		}
-		if fileType == FileTypeGophermap {
-			fmt.Fprint(conn, ".\r\n")
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Error("Cannot read file", "path", path, "err", err)
+			w.WriteError("Cannot read file")
+			return
 		}
+
+		if isBinary(data) {
+			w.Write(data)
+		} else {
+			io.WriteString(w, string(data))
+		}
+		log.Info("Request completed", "selector", r.Selector)
 	}
-	reqLogger.Info("Completed request for selector", "selector", selector)
 }
 
-func cleanPath(basepath, selector string) (string, bool, error) {
-	root, err := os.OpenRoot(basepath)
-	if err != nil {
-		return "", false, err
-	}
-	defer root.Close()
-
-	selector = strings.TrimPrefix(selector, "/")
-	selector = filepath.Clean(selector)
-
-	info, err := root.Stat(selector)
-	if err != nil {
-		return "", false, ErrInvalidFilePath
-	}
-
-	isDir := false
-	if info.IsDir() {
-		isDir = true
-		selector = filepath.Join(selector, "gophermap")
-	}
-	return selector, isDir, nil
-}
-
-func readPath(basepath, selector string) ([]byte, FileType, error) {
-	cleanSelector, isDir, err := cleanPath(basepath, selector)
-	if err != nil {
-		return nil, FileTypeErr, err
-	}
-
-	path := filepath.Join(basepath, cleanSelector)
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, FileTypeErr, ErrInvalidFilePath
-	}
-	defer f.Close()
-
-	data, err := io.ReadAll(f)
-	if err != nil {
-		return nil, FileTypeErr, ErrFileNotFound
-	}
-
-	var fileType FileType
-	if isDir {
-		fileType = FileTypeGophermap
-	} else if isBinaryFile(data) {
-		fileType = FileTypeBinary
-	} else {
-		fileType = FileTypeText
-	}
-
-	return data, fileType, nil
-}
-
-func isBinaryFile(data []byte) bool {
-	mimeType := http.DetectContentType(data)
-	if strings.HasPrefix(mimeType, "text/") {
+func isBinary(data []byte) bool {
+	mime := http.DetectContentType(data)
+	if strings.HasPrefix(mime, "text/") || strings.HasSuffix(mime, "+xml") || strings.HasSuffix(mime, "+json") {
 		return false
 	}
 
-	textMimeTypes := map[string]bool{
-		"application/json":       true,
-		"application/xml":        true,
-		"application/javascript": true,
-		"application/x-sh":       true,
-	}
-
-	if textMimeTypes[mimeType] {
+	switch mime {
+	case "application/json",
+		"application/xml",
+		"application/javascript",
+		"application/x-sh",
+		"application/x-csh",
+		"application/yaml",
+		"application/x-yaml",
+		"application/sql",
+		"application/x-perl",
+		"application/x-python",
+		"application/x-ruby":
 		return false
 	}
 

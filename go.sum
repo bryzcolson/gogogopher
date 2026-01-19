@@ -1,3 +1,5 @@
+codeberg.org/bryzcolson/net-gopher v0.1.2 h1:vmRJqil7NrC231Py1uWxZb8bKdR0ZRDc/YLdqDs8Ll8=
+codeberg.org/bryzcolson/net-gopher v0.1.2/go.mod h1:XGm8M+C4Je0Q5tKLzN9H7+ooqQmGmAn43b/c+jQHvzo=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/pelletier/go-toml v1.9.5 h1:4yBQzkHv+7BHq2PQUZF3Mx0IYxG7LsP222s7Agd3ve8=

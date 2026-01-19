@@ -3,12 +3,9 @@ package main
 import (
 	"fmt"
 	"log/slog"
-	"net"
 	"os"
-	"os/signal"
-	"strings"
-	"syscall"
 
+	gopher "codeberg.org/bryzcolson/net-gopher"
 	toml "github.com/pelletier/go-toml"
 )
 
@@ -56,50 +53,12 @@ func main() {
 	}
 	slog.Info("Loaded config")
 
-	address := fmt.Sprintf(":%d", config.Server.Port)
-	ln, err := net.Listen("tcp", address)
-	if err != nil {
-		slog.Error("Failed to start server", "err", err)
+	gopher.HandleFunc("/", makeHandler(config.Server.HomeDir))
+
+	addr := fmt.Sprintf(":%d", config.Server.Port)
+	slog.Info("Server listening", "addr", addr)
+	if err := gopher.ListenAndServe(addr, nil); err != nil {
+		slog.Error("Server error", "err", err)
 		os.Exit(1)
 	}
-	slog.Info(fmt.Sprintf("Server listening on port %s", address))
-	defer ln.Close()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	connLimit := make(chan struct{}, config.Limits.MaxConnections)
-
-	go func() {
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				if strings.Contains(err.Error(), "use of closed network connection") {
-					return
-				}
-				slog.Error("Error accepting connection", "err", err)
-				continue
-			}
-
-			select {
-			case connLimit <- struct{}{}:
-				go func() {
-					defer conn.Close()
-					defer func() {
-						<-connLimit
-					}()
-
-					slog.Info("Accepted connection", "remote_addr", conn.RemoteAddr().String())
-					defer slog.Info("Closed connection", "remote_addr", conn.RemoteAddr().String())
-
-					handleConn(conn)
-				}()
-			default:
-				slog.Warn("Too many connections", "remote_addr", conn.RemoteAddr().String())
-				conn.Close()
-			}
-		}
-	}()
-
-	sig := <-sigChan
-	slog.Info("Received shutdown signal", "sig", sig.String())
 }
