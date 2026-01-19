@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 
 	gopher "codeberg.org/bryzcolson/net-gopher"
 	toml "github.com/pelletier/go-toml"
+	"golang.org/x/net/netutil"
 )
 
 type Config struct {
@@ -56,8 +58,19 @@ func main() {
 	gopher.HandleFunc("/", makeHandler(config.Server.HomeDir))
 
 	addr := fmt.Sprintf(":%d", config.Server.Port)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		slog.Error("Failed to listen", "addr", addr, "err", err)
+		os.Exit(1)
+	}
+
+	if config.Limits.MaxConnections > 0 {
+		ln = netutil.LimitListener(ln, config.Limits.MaxConnections)
+		slog.Info("Connection limit enabled", "max", config.Limits.MaxConnections)
+	}
+
 	slog.Info("Server listening", "addr", addr)
-	if err := gopher.ListenAndServe(addr, nil); err != nil {
+	if err := gopher.Serve(ln, nil); err != nil {
 		slog.Error("Server error", "err", err)
 		os.Exit(1)
 	}
